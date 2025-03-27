@@ -3,109 +3,126 @@ local start_time = nil
 local session_purpose = nil
 local report_file = vim.fn.stdpath("data") .. "/uptime_report.md"
 
--- Ensure the report file exists and has the correct header
+-- Helper to trim whitespace
+local function trim(str)
+  return str:gsub("^%s*(.-)%s*$", "%1")
+end
+
+-- Safely ensure report file exists
 local function ensure_report_file()
-  local file = io.open(report_file, "r")
-  if not file then
-    file = io.open(report_file, "w")
-    if file then
-      file:write("# Uptime Report\n\n")  -- Markdown title
-      file:write("| Date | Session Purpose | Duration | Achieved |\n")
-      file:write("|------|-----------------|----------|----------|\n")
-      file:close()
-    else
-      print("⚠️ Failed to create uptime report file!")
+  if vim.fn.filereadable(report_file) == 0 then
+    local header = {
+      "# Uptime Report",
+      "",
+      "| Date | Session Purpose | Duration | Achieved | Notes |",
+      "|------|-----------------|----------|----------|-------|"
+    }
+    local ok, err = pcall(vim.fn.writefile, header, report_file)
+    if not ok then
+      vim.notify("⚠️ Failed to create report file: " .. err, vim.log.levels.ERROR)
       return false
     end
-  else
-    file:close()
   end
   return true
 end
 
--- Get current time
-local function current_time()
-  return os.time()
-end
-
 -- Format time as HH:MM:SS
 local function format_time(seconds)
-  local hours = math.floor(seconds / 3600)
-  local minutes = math.floor((seconds % 3600) / 60)
-  local secs = seconds % 60
-  return string.format("%02d:%02d:%02d", hours, minutes, secs)
+  return os.date("!%H:%M:%S", seconds)
 end
 
--- Get formatted current date
-local function get_current_date()
-  return os.date("%Y-%m-%d")
-end
-
--- Write session details to the markdown file
-local function write_to_report(purpose, duration, achieved)
+-- Write to report with error handling
+local function write_to_report(purpose, duration, achieved, notes)
   if not ensure_report_file() then return end
+
+  -- Escape Markdown special characters
+  local function escape_md(str)
+    return str:gsub("[\\`*_{}%[%]()#+-.!|]", "\\%1")
+  end
+
+  local entry = {
+    os.date("%Y-%m-%d"),
+    escape_md(purpose),
+    duration,
+    achieved,
+    escape_md(notes or "")
+  }
+
+  local line = string.format("| %s | %s | %s | %s | %s |\n", unpack(entry))
   
-  local file = io.open(report_file, "a")
-  if file then
-    -- Escape any Markdown special characters in the purpose
-    local escaped_purpose = purpose:gsub("|", "\\|")
-    local current_date = get_current_date()
-    
-    file:write(string.format("| %s | %s | %s | %s |\n", 
-      current_date, escaped_purpose, duration, achieved))
-    file:close()
-    print("📜 Uptime session recorded in uptime_report.md")
-    
-    -- Automatically open the report file for the user
-    vim.cmd("e " .. report_file)
+  local ok, err = pcall(function()
+    local fd = io.open(report_file, "a")
+    if not fd then error("Failed to open file") end
+    fd:write(line)
+    fd:close()
+  end)
+  
+  if ok then
+    vim.notify("📜 Session recorded in report", vim.log.levels.INFO)
+    vim.schedule(function()
+      vim.cmd("edit " .. vim.fn.fnameescape(report_file))
+    end)
   else
-    print("⚠️ Failed to write to uptime report!")
+    vim.notify("⚠️ Failed to write report: " .. err, vim.log.levels.ERROR)
   end
 end
 
--- Start tracking uptime
+-- Start tracking
 M.start = function()
-  -- Check if a session is already in progress
   if start_time then
-    print("⚠️ An uptime session is already in progress!")
+    vim.notify("⚠️ Session already in progress!", vim.log.levels.WARN)
     return
   end
 
-  vim.ui.input({ prompt = "Enter purpose of this session: " }, function(input)
-    if input and input ~= "" then
-      session_purpose = input
-      start_time = current_time()
-      print("✅ Uptime tracking started! Purpose: " .. session_purpose)
-    else
-      print("⚠️ Session purpose cannot be empty!")
+  vim.ui.input({
+    prompt = "Session purpose: ",
+    default = "General editing",
+  }, function(input)
+    if not input then return end
+    
+    local purpose = trim(input)
+    if purpose == "" then
+      vim.notify("⚠️ Purpose cannot be empty!", vim.log.levels.ERROR)
+      return
     end
+
+    start_time = os.time()
+    session_purpose = purpose
+    vim.notify("✅ Tracking started: " .. purpose, vim.log.levels.INFO)
   end)
 end
 
--- Stop tracking uptime
+-- Stop tracking
 M.stop = function()
   if not start_time then
-    print("⚠️ No active uptime session!")
+    vim.notify("⚠️ No active session!", vim.log.levels.WARN)
     return
   end
-  
-  local elapsed = current_time() - start_time
-  local formatted_time = format_time(elapsed)
-  
-  vim.ui.input({ prompt = "Did you achieve your purpose? (yes/no): " }, function(response)
-    local achieved = (response and response:lower() == "yes") and "✅ Yes" or "❌ No"
-    write_to_report(session_purpose, formatted_time, achieved)
+
+  local elapsed = os.time() - start_time
+  local duration = format_time(elapsed)
+
+  vim.ui.input({
+    prompt = "Achieved goal? (y/n): ",
+    default = "y",
+  }, function(achieved)
+    local result = (achieved:lower():sub(1,1) == "y") and "✅ Yes" or "❌ No"
     
-    -- Reset session
-    start_time = nil
-    session_purpose = nil
+    vim.ui.input({
+      prompt = "Notes (optional): ",
+      default = "",
+    }, function(notes)
+      write_to_report(session_purpose, duration, result, notes)
+      start_time = nil
+      session_purpose = nil
+    end)
   end)
 end
 
--- Open the report file anytime
+-- Open report
 M.report = function()
   if ensure_report_file() then
-    vim.cmd("e " .. report_file)
+    vim.cmd("edit " .. vim.fn.fnameescape(report_file))
   end
 end
 
@@ -113,5 +130,11 @@ end
 vim.api.nvim_create_user_command("UptimeStart", M.start, {})
 vim.api.nvim_create_user_command("UptimeStop", M.stop, {})
 vim.api.nvim_create_user_command("UptimeReport", M.report, {})
+
+-- Optional: Auto-start when Neovim launches
+-- vim.api.nvim_create_autocmd("VimEnter", {
+--   callback = M.start,
+--   once = true
+-- })
 
 return M
