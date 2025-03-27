@@ -14,8 +14,8 @@ local function ensure_report_file()
     local header = {
       "# Uptime Report",
       "",
-      "| Date | Session Purpose | Duration | Achieved | Notes |",
-      "|------|-----------------|----------|----------|-------|"
+      "| Date | Session Purpose | Duration | Achieved |",
+      "|------|-----------------|----------|----------|"
     }
     local ok, err = pcall(vim.fn.writefile, header, report_file)
     if not ok then
@@ -32,7 +32,7 @@ local function format_time(seconds)
 end
 
 -- Write to report with error handling
-local function write_to_report(purpose, duration, achieved, notes)
+local function write_to_report(purpose, duration, achieved)
   if not ensure_report_file() then return end
 
   -- Escape Markdown special characters
@@ -44,11 +44,10 @@ local function write_to_report(purpose, duration, achieved, notes)
     os.date("%Y-%m-%d"),
     escape_md(purpose),
     duration,
-    achieved,
-    escape_md(notes or "")
+    achieved
   }
 
-  local line = string.format("| %s | %s | %s | %s | %s |\n", unpack(entry))
+  local line = string.format("| %s | %s | %s | %s |\n", unpack(entry))
   
   local ok, err = pcall(function()
     local fd = io.open(report_file, "a")
@@ -107,15 +106,9 @@ M.stop = function()
     default = "y",
   }, function(achieved)
     local result = (achieved:lower():sub(1,1) == "y") and "✅ Yes" or "❌ No"
-    
-    vim.ui.input({
-      prompt = "Notes (optional): ",
-      default = "",
-    }, function(notes)
-      write_to_report(session_purpose, duration, result, notes)
-      start_time = nil
-      session_purpose = nil
-    end)
+    write_to_report(session_purpose, duration, result)
+    start_time = nil
+    session_purpose = nil
   end)
 end
 
@@ -130,11 +123,5 @@ end
 vim.api.nvim_create_user_command("UptimeStart", M.start, {})
 vim.api.nvim_create_user_command("UptimeStop", M.stop, {})
 vim.api.nvim_create_user_command("UptimeReport", M.report, {})
-
--- Optional: Auto-start when Neovim launches
--- vim.api.nvim_create_autocmd("VimEnter", {
---   callback = M.start,
---   once = true
--- })
 
 return M
