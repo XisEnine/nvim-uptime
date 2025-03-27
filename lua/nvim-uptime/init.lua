@@ -93,10 +93,10 @@ local function write_to_report(purpose, duration, achieved, note)
 	local escaped_purpose = purpose:gsub("|", "\\|")
 	local escaped_note = (note or ""):gsub("|", "\\|")
 	local line =
-		string.format("| %s | %s | %s | %s | %s |\n", current_date, escaped_purpose, duration, achieved, escaped_note)
+		string.format("| %s | %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved, escaped_note)
 	local file = io.open(report_file, "a")
 	if file then
-		file:write(line .. "\n") -- Add an extra newline for a break between entries
+		file:write(line .. "\n")
 		file:close()
 		vim.notify("📜 Uptime session recorded in uptime_report.md", vim.log.levels.INFO)
 		-- Automatically open the report file for the user
