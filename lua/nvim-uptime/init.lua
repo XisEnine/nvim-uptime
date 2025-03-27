@@ -96,7 +96,7 @@ local function write_to_report(purpose, duration, achieved, note)
 		string.format("| %s | %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved, escaped_note)
 	local file = io.open(report_file, "a")
 	if file then
-		file:write(line .. "\n")
+		file:write(line .. "\n\n") -- Add two new lines for break.
 		file:close()
 		vim.notify("📜 Uptime session recorded in uptime_report.md", vim.log.levels.INFO)
 		-- Automatically open the report file for the user
