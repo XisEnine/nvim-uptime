@@ -17,14 +17,14 @@ local function trim(str)
 	return str:gsub("^%s*(.-)%s*$", "%1")
 end
 
--- File initialization: Ensure the report file exists and has the correct header
+-- File initialization: Ensure the report file exists with the proper header
 local function ensure_report_file()
 	if vim.fn.filereadable(report_file) == 0 then
 		local header = {
 			"# Uptime Report",
 			"",
-			"| Date | Session Purpose | Duration | Achieved |",
-			"|------|-----------------|----------|----------|",
+			"| Date | Session Purpose | Duration | Achieved | Notes |",
+			"|------|-----------------|----------|----------|-------|",
 		}
 		local ok, err = pcall(vim.fn.writefile, header, report_file)
 		if not ok then
@@ -75,7 +75,7 @@ local function export_report()
 	end
 end
 
--- Format time (in seconds) to HH:MM:SS format
+-- Format time (in seconds) to HH:MM:SS
 local function format_time(seconds)
 	local hours = math.floor(seconds / 3600)
 	local minutes = math.floor((seconds % 3600) / 60)
@@ -83,15 +83,17 @@ local function format_time(seconds)
 	return string.format("%02d:%02d:%02d", hours, minutes, secs)
 end
 
--- Write session details to the report file in Markdown table format
-local function write_to_report(purpose, duration, achieved)
+-- Write session details to the report file (including Notes)
+local function write_to_report(purpose, duration, achieved, note)
 	if not ensure_report_file() then
 		return
 	end
 
 	local current_date = os.date("%Y-%m-%d")
 	local escaped_purpose = purpose:gsub("|", "\\|")
-	local line = string.format("| %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved)
+	local escaped_note = (note or ""):gsub("|", "\\|")
+	local line =
+		string.format("| %s | %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved, escaped_note)
 	local file = io.open(report_file, "a")
 	if file then
 		file:write(line .. "\n")
@@ -122,7 +124,7 @@ function M.start()
 	end)
 end
 
--- Stop tracking uptime: Calculate duration, ask if the purpose was achieved, and write to report
+-- Stop tracking uptime: Calculate duration, ask if the purpose was achieved and prompt for notes, then record the session
 function M.stop()
 	if not start_time then
 		vim.notify("⚠️ No active uptime session!", vim.log.levels.WARN)
@@ -134,9 +136,12 @@ function M.stop()
 
 	vim.ui.input({ prompt = "Did you achieve your purpose? (yes/no): " }, function(response)
 		local achieved = (response and response:lower():match("^y")) and "✅ Yes" or "❌ No"
-		write_to_report(session_purpose, formatted_duration, achieved)
-		start_time = nil
-		session_purpose = nil
+		vim.ui.input({ prompt = "Enter any notes for this session (optional): " }, function(note)
+			local trimmed_note = note and trim(note) or ""
+			write_to_report(session_purpose, formatted_duration, achieved, trimmed_note)
+			start_time = nil
+			session_purpose = nil
+		end)
 	end)
 end
 
