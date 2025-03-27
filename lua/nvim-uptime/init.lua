@@ -66,10 +66,7 @@ local function export_report()
 	end)
 
 	if ok then
-		vim.notify("📤 Exported to: " .. export_path, vim.log.levels.INFO)
-		vim.schedule(function()
-			vim.cmd("edit " .. vim.fn.fnameescape(export_path))
-		end)
+		vim.notify("📤 Report exported to: " .. export_path, vim.log.levels.INFO)
 	else
 		vim.notify("⚠️ Export failed: " .. err, vim.log.levels.ERROR)
 	end
@@ -94,13 +91,13 @@ local function write_to_report(purpose, duration, achieved, note)
 	local escaped_note = (note or ""):gsub("|", "\\|")
 	local line =
 		string.format("| %s | %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved, escaped_note)
+
 	local file = io.open(report_file, "a")
 	if file then
-		file:write(line .. "\n\n") -- Add two new lines for break.
+		file:write(line .. "\n")
+		file:write("\n")
 		file:close()
 		vim.notify("📜 Uptime session recorded in uptime_report.md", vim.log.levels.INFO)
-		-- Automatically open the report file for the user
-		vim.cmd("edit " .. vim.fn.fnameescape(report_file))
 	else
 		vim.notify("⚠️ Failed to write to uptime report!", vim.log.levels.ERROR)
 	end
@@ -152,11 +149,19 @@ function M.report()
 	end
 end
 
+-- Preview the report file in a split window
+function M.preview()
+	if ensure_report_file() then
+		vim.cmd("split " .. vim.fn.fnameescape(report_file))
+	end
+end
+
 -- Register commands
 vim.api.nvim_create_user_command("UptimeStart", M.start, {})
 vim.api.nvim_create_user_command("UptimeStop", M.stop, {})
 vim.api.nvim_create_user_command("UptimeReport", M.report, {})
 vim.api.nvim_create_user_command("UptimeReset", reset_report, {})
 vim.api.nvim_create_user_command("UptimeExport", export_report, {})
+vim.api.nvim_create_user_command("UptimePreview", M.preview, {})
 
 return M
