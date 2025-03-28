@@ -109,15 +109,42 @@ local function write_to_report(purpose, duration, achieved, note)
 	end
 end
 
--- Start/Stop functions remain unchanged
+-- Start a new session
 function M.start()
-	-- ... (same as original) ...
+	if start_time then
+		vim.notify("⚠️ A session is already running!", vim.log.levels.WARN)
+		return
+	end
+
+	vim.ui.input({ prompt = "Enter session purpose: " }, function(input)
+		if input and trim(input) ~= "" then
+			start_time = os.time()
+			session_purpose = trim(input)
+			vim.notify("⏳ Session started for: " .. session_purpose, vim.log.levels.INFO)
+		else
+			vim.notify("⚠️ Session purpose cannot be empty!", vim.log.levels.WARN)
+		end
+	end)
 end
 
+-- Stop the current session
 function M.stop()
-	-- ... (same as original) ...
-end
+	if not start_time then
+		vim.notify("⚠️ No active session to stop!", vim.log.levels.WARN)
+		return
+	end
 
--- ... (remaining functions and commands remain unchanged) ...
+	local elapsed_time = os.time() - start_time
+	local duration = format_time(elapsed_time)
+
+	vim.ui.input({ prompt = "What did you achieve? " }, function(achieved)
+		vim.ui.input({ prompt = "Any notes? (optional): " }, function(note)
+			write_to_report(session_purpose, duration, achieved or "Not specified", note or "")
+			start_time = nil
+			session_purpose = nil
+			vim.notify("✅ Session ended. Duration: " .. duration, vim.log.levels.INFO)
+		end)
+	end)
+end
 
 return M
