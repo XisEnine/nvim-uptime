@@ -3,7 +3,7 @@ local start_time = nil
 local session_purpose = nil
 local report_file = vim.fn.stdpath("data") .. "/uptime_report.md"
 
--- Helper: Get Downloads path for any OS (unchanged)
+-- Helper: Get Downloads path for any OS
 local function get_downloads_path()
 	if vim.fn.has("win32") == 1 then
 		return os.getenv("USERPROFILE") .. "\\Downloads\\"
@@ -12,17 +12,19 @@ local function get_downloads_path()
 	end
 end
 
--- Helper: Trim whitespace from a string (unchanged)
+-- Helper: Trim whitespace from a string
 local function trim(str)
 	return str:gsub("^%s*(.-)%s*$", "%1")
 end
 
--- File initialization: Create basic report structure
+-- File initialization: Ensure the report file exists with the proper header
 local function ensure_report_file()
 	if vim.fn.filereadable(report_file) == 0 then
 		local header = {
 			"# Uptime Report",
 			"",
+			"| Date | Session Purpose | Duration | Achieved | Notes |",
+			"|------|-----------------|----------|----------|-------|",
 		}
 		local ok, err = pcall(vim.fn.writefile, header, report_file)
 		if not ok then
@@ -33,7 +35,7 @@ local function ensure_report_file()
 	return true
 end
 
--- Reset report (unchanged)
+-- Reset report: Delete all data after confirmation
 local function reset_report()
 	vim.ui.input({
 		prompt = "Are you sure? This will DELETE all data! (y/n): ",
@@ -48,7 +50,7 @@ local function reset_report()
 	end)
 end
 
--- Export report (unchanged)
+-- Export report: Copy the report file to the Downloads folder and open it
 local function export_report()
 	local downloads_dir = get_downloads_path()
 	local export_path = downloads_dir .. "uptime_report.md"
@@ -73,7 +75,7 @@ local function export_report()
 	end
 end
 
--- Format time (unchanged)
+-- Format time (in seconds) to HH:MM:SS
 local function format_time(seconds)
 	local hours = math.floor(seconds / 3600)
 	local minutes = math.floor((seconds % 3600) / 60)
@@ -81,70 +83,80 @@ local function format_time(seconds)
 	return string.format("%02d:%02d:%02d", hours, minutes, secs)
 end
 
--- Write session details as a Markdown snippet
+-- Write session details to the report file (including Notes)
 local function write_to_report(purpose, duration, achieved, note)
 	if not ensure_report_file() then
 		return
 	end
 
 	local current_date = os.date("%Y-%m-%d")
-	local entry = {
-		"",
-		string.format("### %s - %s", current_date, purpose),
-		string.format("**Duration**: %s  ", duration),
-		string.format("**Achieved**: %s  ", achieved),
-		string.format("**Notes**: %s  ", note or "-"),
-		"",
-		"---",
-	}
-
+	local escaped_purpose = purpose:gsub("|", "\\|")
+	local escaped_note = (note or ""):gsub("|", "\\|")
+	local line =
+		string.format("| %s | %s | %s | %s | %s |", current_date, escaped_purpose, duration, achieved, escaped_note)
 	local file = io.open(report_file, "a")
 	if file then
-		file:write(table.concat(entry, "\n") .. "\n")
+		file:write(line .. "\n")
 		file:close()
-		vim.notify("📜 Uptime session recorded", vim.log.levels.INFO)
+		vim.notify("📜 Uptime session recorded in uptime_report.md", vim.log.levels.INFO)
+		-- Automatically open the report file for the user
 		vim.cmd("edit " .. vim.fn.fnameescape(report_file))
 	else
-		vim.notify("⚠️ Failed to write to report!", vim.log.levels.ERROR)
+		vim.notify("⚠️ Failed to write to uptime report!", vim.log.levels.ERROR)
 	end
 end
 
--- Start a new session
+-- Start tracking uptime: Prompt for the session purpose and record the start time
 function M.start()
 	if start_time then
-		vim.notify("⚠️ A session is already running!", vim.log.levels.WARN)
+		vim.notify("⚠️ An uptime session is already in progress!", vim.log.levels.WARN)
 		return
 	end
 
-	vim.ui.input({ prompt = "Enter session purpose: " }, function(input)
+	vim.ui.input({ prompt = "Enter purpose of this session: " }, function(input)
 		if input and trim(input) ~= "" then
+			session_purpose = input
 			start_time = os.time()
-			session_purpose = trim(input)
-			vim.notify("⏳ Session started for: " .. session_purpose, vim.log.levels.INFO)
+			vim.notify("✅ Uptime tracking started! Purpose: " .. session_purpose, vim.log.levels.INFO)
 		else
 			vim.notify("⚠️ Session purpose cannot be empty!", vim.log.levels.WARN)
 		end
 	end)
 end
 
--- Stop the current session
+-- Stop tracking uptime: Calculate duration, ask if the purpose was achieved and prompt for notes, then record the session
 function M.stop()
 	if not start_time then
-		vim.notify("⚠️ No active session to stop!", vim.log.levels.WARN)
+		vim.notify("⚠️ No active uptime session!", vim.log.levels.WARN)
 		return
 	end
 
-	local elapsed_time = os.time() - start_time
-	local duration = format_time(elapsed_time)
+	local elapsed = os.time() - start_time
+	local formatted_duration = format_time(elapsed)
 
-	vim.ui.input({ prompt = "What did you achieve? " }, function(achieved)
-		vim.ui.input({ prompt = "Any notes? (optional): " }, function(note)
-			write_to_report(session_purpose, duration, achieved or "Not specified", note or "")
+	vim.ui.input({ prompt = "Did you achieve your purpose? (yes/no): " }, function(response)
+		local achieved = (response and response:lower():match("^y")) and "✅ Yes" or "❌ No"
+		vim.ui.input({ prompt = "Enter any notes for this session (optional): " }, function(note)
+			local trimmed_note = note and trim(note) or ""
+			write_to_report(session_purpose, formatted_duration, achieved, trimmed_note)
 			start_time = nil
 			session_purpose = nil
-			vim.notify("✅ Session ended. Duration: " .. duration, vim.log.levels.INFO)
 		end)
 	end)
 end
+
+-- Open the report file so the user can view their sessions
+function M.report()
+	if ensure_report_file() then
+		vim.cmd("edit " .. vim.fn.fnameescape(report_file))
+	end
+end
+
+-- Register commands
+vim.api.nvim_create_user_command("UptimeStart", M.start, {})
+vim.api.nvim_create_user_command("UptimeStop", M.stop, {})
+vim.api.nvim_create_user_command("UptimeReport", M.report, {})
+vim.api.nvim_create_user_command("UptimeReset", reset_report, {})
+vim.api.nvim_create_user_command("UptimeExport", export_report, {})
 
 return M
